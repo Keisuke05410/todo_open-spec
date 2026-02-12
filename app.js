@@ -3,6 +3,7 @@
 // ============================================================
 const Storage = {
     STORAGE_KEY: 'simple-todo-tasks',
+    DELETED_TASKS_KEY: 'deletedTasks',
 
     loadTasks() {
         try {
@@ -30,6 +31,32 @@ const Storage = {
         }
     },
 
+    loadDeletedTasks() {
+        try {
+            const data = localStorage.getItem(this.DELETED_TASKS_KEY);
+            if (!data) {
+                return [];
+            }
+            const tasks = JSON.parse(data);
+            // Validate that we got an array
+            if (!Array.isArray(tasks)) {
+                console.error('Corrupted deleted tasks storage data: expected array');
+                return [];
+            }
+            return tasks;
+        } catch (error) {
+            if (error.name === 'SecurityError' || error.name === 'QuotaExceededError') {
+                // Storage unavailable (private browsing) or quota exceeded
+                console.warn('LocalStorage unavailable:', error.message);
+                return [];
+            }
+            // JSON parsing error or other corruption
+            console.error('Failed to load deleted tasks, resetting storage:', error);
+            localStorage.removeItem(this.DELETED_TASKS_KEY);
+            return [];
+        }
+    },
+
     saveTasks(tasks) {
         try {
             const data = JSON.stringify(tasks);
@@ -47,6 +74,25 @@ const Storage = {
             console.error('Failed to save tasks:', error);
             return { success: false, error: 'unknown' };
         }
+    },
+
+    saveDeletedTasks(tasks) {
+        try {
+            const data = JSON.stringify(tasks);
+            localStorage.setItem(this.DELETED_TASKS_KEY, data);
+            return { success: true };
+        } catch (error) {
+            if (error.name === 'QuotaExceededError') {
+                console.error('Storage quota exceeded');
+                return { success: false, error: 'quota' };
+            }
+            if (error.name === 'SecurityError') {
+                console.warn('LocalStorage unavailable (private browsing mode)');
+                return { success: false, error: 'unavailable' };
+            }
+            console.error('Failed to save deleted tasks:', error);
+            return { success: false, error: 'unknown' };
+        }
     }
 };
 
@@ -55,6 +101,7 @@ const Storage = {
 // ============================================================
 const State = {
     tasks: [], // In-memory array holding current task state
+    deletedTasks: [], // In-memory array holding deleted tasks
     storageErrorOccurred: false,
 
     addTask(text) {
@@ -115,20 +162,34 @@ const State = {
             return false;
         }
 
+        // Soft-delete: move task to deleted tasks array
+        const task = this.tasks[index];
+        task.deletedAt = new Date().toISOString();
+        this.deletedTasks.push(task);
         this.tasks.splice(index, 1);
         this._saveToStorage();
 
         return true;
     },
 
+    getDeletedTasks() {
+        // Return deleted tasks sorted by deletion timestamp (most recent first)
+        return [...this.deletedTasks].sort((a, b) => {
+            return new Date(b.deletedAt) - new Date(a.deletedAt);
+        });
+    },
+
     _saveToStorage() {
         // Helper to save current state and track storage errors
         const result = Storage.saveTasks(this.tasks);
-        if (!result.success && !this.storageErrorOccurred) {
+        const deletedResult = Storage.saveDeletedTasks(this.deletedTasks);
+
+        if ((!result.success || !deletedResult.success) && !this.storageErrorOccurred) {
             this.storageErrorOccurred = true;
-            if (result.error === 'quota') {
+            const error = !result.success ? result.error : deletedResult.error;
+            if (error === 'quota') {
                 UI.showNotification('Storage limit reached. Please delete some tasks to continue.', 'error');
-            } else if (result.error === 'unavailable') {
+            } else if (error === 'unavailable') {
                 UI.showNotification('Storage unavailable (private browsing mode). Tasks will not persist.', 'warning');
             } else {
                 UI.showNotification('Failed to save tasks. Tasks will not persist.', 'error');
@@ -145,8 +206,13 @@ const UI = {
         taskForm: null,
         taskInput: null,
         taskListContainer: null,
-        notificationArea: null
+        notificationArea: null,
+        viewToggle: null,
+        activeTab: null,
+        deletedTab: null
     },
+
+    currentView: 'active', // Track current view: 'active' or 'deleted'
 
     init() {
         // Cache DOM elements
@@ -154,9 +220,18 @@ const UI = {
         this.elements.taskInput = document.getElementById('task-input');
         this.elements.taskListContainer = document.getElementById('task-list-container');
         this.elements.notificationArea = document.getElementById('notification-area');
+        this.elements.viewToggle = document.getElementById('view-toggle');
+        this.elements.activeTab = document.getElementById('active-tab');
+        this.elements.deletedTab = document.getElementById('deleted-tab');
     },
 
     renderTaskList() {
+        // Render based on current view
+        if (this.currentView === 'deleted') {
+            this.renderDeletedTasks();
+            return;
+        }
+
         const container = this.elements.taskListContainer;
 
         // Show empty state if no tasks
@@ -204,6 +279,60 @@ const UI = {
         `;
     },
 
+    renderDeletedTasks() {
+        const container = this.elements.taskListContainer;
+        const deletedTasks = State.getDeletedTasks();
+
+        // Show empty state if no deleted tasks
+        if (deletedTasks.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <p>No deleted tasks.</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Create deleted task list HTML
+        const ul = document.createElement('ul');
+        ul.id = 'deleted-task-list';
+
+        deletedTasks.forEach(task => {
+            const li = document.createElement('li');
+            li.className = 'task-item deleted-task completed';
+            li.dataset.taskId = task.id;
+
+            // Format deletion timestamp
+            const deletedDate = new Date(task.deletedAt);
+            const formattedDate = deletedDate.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+            const formattedTime = deletedDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+
+            li.innerHTML = `
+                <input
+                    type="checkbox"
+                    class="task-checkbox"
+                    checked
+                    disabled
+                    aria-label="Deleted task (completed)"
+                >
+                <span class="task-text">${this.escapeHtml(task.text)}</span>
+                <span class="deleted-timestamp">Deleted on ${formattedDate} at ${formattedTime}</span>
+            `;
+
+            ul.appendChild(li);
+        });
+
+        container.innerHTML = '';
+        container.appendChild(ul);
+    },
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -224,6 +353,15 @@ const UI = {
     },
 
     setupEventListeners() {
+        // Handle view toggle
+        this.elements.viewToggle.addEventListener('click', (e) => {
+            if (e.target.id === 'active-tab') {
+                this.showActiveView();
+            } else if (e.target.id === 'deleted-tab') {
+                this.showDeletedView();
+            }
+        });
+
         // Handle new task form submission
         this.elements.taskForm.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -302,6 +440,20 @@ const UI = {
         if (State.deleteTask(taskId)) {
             this.renderTaskList();
         }
+    },
+
+    showActiveView() {
+        this.currentView = 'active';
+        this.elements.activeTab.classList.add('active');
+        this.elements.deletedTab.classList.remove('active');
+        this.renderTaskList();
+    },
+
+    showDeletedView() {
+        this.currentView = 'deleted';
+        this.elements.deletedTab.classList.add('active');
+        this.elements.activeTab.classList.remove('active');
+        this.renderDeletedTasks();
     }
 };
 
@@ -311,6 +463,7 @@ const UI = {
 function init() {
     // Load tasks from storage
     State.tasks = Storage.loadTasks();
+    State.deletedTasks = Storage.loadDeletedTasks();
 
     // Initialize UI elements
     UI.init();
