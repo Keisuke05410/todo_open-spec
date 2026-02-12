@@ -34,12 +34,30 @@ The separation follows a clear pattern: Storage handles persistence, State manag
 
 ## Running the Application
 
-**Important:** The application uses ES6 modules, which require an HTTP server (not `file://` protocol):
+**Important:** The application uses ES6 modules, which require an HTTP server (not `file://` protocol).
 
-1. Use a local server: `python3 -m http.server 8000` or `npx serve`
-2. Open `http://localhost:8000/` in a web browser
+### Primary Method (Node.js/npm required)
 
-No build or compilation step is required.
+Start the development server with:
+```bash
+npm start
+```
+
+This will launch the server on `http://localhost:8000/`. Open this URL in your web browser.
+
+### Alternative Methods
+
+**Direct npx command** (no npm install needed):
+```bash
+npx serve -p 8000
+```
+
+**Python server** (fallback for environments without Node.js):
+```bash
+python3 -m http.server 8000
+```
+
+All methods serve on port 8000. No build or compilation step is required.
 
 ## Key Implementation Patterns
 
