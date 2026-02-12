@@ -274,6 +274,206 @@ TestRunner.test('State initialization should load both active and deleted tasks'
     TestRunner.assertEquals(State.deletedTasks.length, 1, 'Should load deleted tasks');
 });
 
+// ============================================================
+// Tests for trash operations - Storage module
+// ============================================================
+
+TestRunner.test('removeFromDeletedTasks should permanently remove task from deleted tasks', () => {
+    resetState();
+
+    const task1 = State.addTask('Task 1');
+    const task2 = State.addTask('Task 2');
+    State.deleteTask(task1.id);
+    State.deleteTask(task2.id);
+
+    const result = Storage.removeFromDeletedTasks(task1.id);
+
+    TestRunner.assertTrue(result.success, 'Should return success');
+    const loaded = Storage.loadDeletedTasks();
+    TestRunner.assertEquals(loaded.length, 1, 'Should have one deleted task remaining');
+    TestRunner.assertEquals(loaded[0].id, task2.id, 'Should keep the correct task');
+});
+
+TestRunner.test('removeFromDeletedTasks should handle non-existent task gracefully', () => {
+    resetState();
+
+    const result = Storage.removeFromDeletedTasks('nonexistent-id');
+
+    TestRunner.assertTrue(result.success, 'Should succeed even if task not found');
+    TestRunner.assertEquals(Storage.loadDeletedTasks().length, 0, 'Should have no deleted tasks');
+});
+
+TestRunner.test('removeFromDeletedTasks should handle storage errors', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    State.deleteTask(task.id);
+
+    // Mock quota exceeded error by filling localStorage
+    const originalSetItem = localStorage.setItem;
+    localStorage.setItem = () => {
+        const error = new Error('QuotaExceededError');
+        error.name = 'QuotaExceededError';
+        throw error;
+    };
+
+    const result = Storage.removeFromDeletedTasks(task.id);
+
+    TestRunner.assertFalse(result.success, 'Should return failure');
+    TestRunner.assertEquals(result.error, 'quota', 'Should identify quota error');
+
+    // Restore original method
+    localStorage.setItem = originalSetItem;
+});
+
+TestRunner.test('moveTaskToActive should move task from deleted to active storage', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    State.deleteTask(task.id);
+
+    const result = Storage.moveTaskToActive(task.id);
+
+    TestRunner.assertTrue(result.success, 'Should return success');
+    const activeTasks = Storage.loadTasks();
+    const deletedTasks = Storage.loadDeletedTasks();
+    TestRunner.assertEquals(activeTasks.length, 1, 'Should have one active task');
+    TestRunner.assertEquals(deletedTasks.length, 0, 'Should have no deleted tasks');
+    TestRunner.assertEquals(activeTasks[0].id, task.id, 'Should have correct task in active');
+});
+
+TestRunner.test('moveTaskToActive should preserve task data including deletedAt', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    task.completed = true;
+    State.deleteTask(task.id);
+
+    Storage.moveTaskToActive(task.id);
+
+    const activeTasks = Storage.loadTasks();
+    TestRunner.assertEquals(activeTasks[0].text, 'Test task', 'Should preserve text');
+    TestRunner.assertEquals(activeTasks[0].completed, true, 'Should preserve completion status');
+    TestRunner.assertTrue(activeTasks[0].deletedAt !== undefined, 'Should preserve deletedAt timestamp');
+});
+
+TestRunner.test('moveTaskToActive should return error for non-existent task', () => {
+    resetState();
+
+    const result = Storage.moveTaskToActive('nonexistent-id');
+
+    TestRunner.assertFalse(result.success, 'Should return failure');
+    TestRunner.assertEquals(result.error, 'not_found', 'Should identify not found error');
+});
+
+// ============================================================
+// Tests for trash operations - State module
+// ============================================================
+
+TestRunner.test('restoreTask should move task from deleted to active array', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    const taskId = task.id;
+    State.deleteTask(taskId);
+
+    const result = State.restoreTask(taskId);
+
+    TestRunner.assertTrue(result, 'Should return true');
+    TestRunner.assertEquals(State.tasks.length, 1, 'Should have one active task');
+    TestRunner.assertEquals(State.deletedTasks.length, 0, 'Should have no deleted tasks');
+    TestRunner.assertEquals(State.tasks[0].id, taskId, 'Should have correct task in active');
+});
+
+TestRunner.test('restoreTask should preserve all task data including deletedAt', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    task.completed = true;
+    const taskId = task.id;
+    const originalCreatedAt = task.createdAt;
+
+    State.deleteTask(taskId);
+    const deletedAt = State.deletedTasks[0].deletedAt;
+
+    State.restoreTask(taskId);
+
+    const restoredTask = State.tasks[0];
+    TestRunner.assertEquals(restoredTask.text, 'Test task', 'Should preserve text');
+    TestRunner.assertEquals(restoredTask.completed, true, 'Should preserve completion status');
+    TestRunner.assertEquals(restoredTask.createdAt, originalCreatedAt, 'Should preserve createdAt');
+    TestRunner.assertEquals(restoredTask.deletedAt, deletedAt, 'Should preserve deletedAt timestamp');
+});
+
+TestRunner.test('restoreTask should return false for non-existent task', () => {
+    resetState();
+
+    const result = State.restoreTask('nonexistent-id');
+
+    TestRunner.assertFalse(result, 'Should return false');
+    TestRunner.assertEquals(State.tasks.length, 0, 'Should have no active tasks');
+});
+
+TestRunner.test('restoreTask should persist changes to localStorage', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    State.deleteTask(task.id);
+    State.restoreTask(task.id);
+
+    const storedActive = JSON.parse(localStorage.getItem('simple-todo-tasks'));
+    const storedDeleted = JSON.parse(localStorage.getItem('deletedTasks'));
+
+    TestRunner.assertEquals(storedActive.length, 1, 'Should save to active storage');
+    TestRunner.assertEquals(storedDeleted.length, 0, 'Should remove from deleted storage');
+});
+
+TestRunner.test('permanentDeleteTask should remove task completely from state', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    State.deleteTask(task.id);
+
+    const result = State.permanentDeleteTask(task.id);
+
+    TestRunner.assertTrue(result, 'Should return true');
+    TestRunner.assertEquals(State.deletedTasks.length, 0, 'Should have no deleted tasks');
+});
+
+TestRunner.test('permanentDeleteTask should return false for non-existent task', () => {
+    resetState();
+
+    const result = State.permanentDeleteTask('nonexistent-id');
+
+    TestRunner.assertFalse(result, 'Should return false');
+});
+
+TestRunner.test('permanentDeleteTask should persist changes to localStorage', () => {
+    resetState();
+
+    const task = State.addTask('Test task');
+    State.deleteTask(task.id);
+    State.permanentDeleteTask(task.id);
+
+    const storedDeleted = localStorage.getItem('deletedTasks');
+    const parsed = JSON.parse(storedDeleted);
+
+    TestRunner.assertEquals(parsed.length, 0, 'Should remove from deleted storage');
+});
+
+TestRunner.test('permanentDeleteTask should not affect active tasks', () => {
+    resetState();
+
+    const task1 = State.addTask('Active task');
+    const task2 = State.addTask('To delete');
+    State.deleteTask(task2.id);
+
+    State.permanentDeleteTask(task2.id);
+
+    TestRunner.assertEquals(State.tasks.length, 1, 'Should still have one active task');
+    TestRunner.assertEquals(State.tasks[0].id, task1.id, 'Should keep correct active task');
+});
+
 // Run all tests when this script loads
 if (typeof window !== 'undefined') {
     window.addEventListener('load', () => {

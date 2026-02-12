@@ -126,6 +126,10 @@ export const UI = {
                 >
                 <span class="task-text">${this.escapeHtml(task.text)}</span>
                 <span class="deleted-timestamp">Deleted on ${formattedDate} at ${formattedTime}</span>
+                <div class="task-actions">
+                    <button class="btn-restore" aria-label="Restore task">Restore</button>
+                    <button class="btn-permanent-delete" aria-label="Permanently delete task">Permanently Delete</button>
+                </div>
             `;
 
             ul.appendChild(li);
@@ -209,6 +213,16 @@ export const UI = {
             if (e.target.classList.contains('btn-delete')) {
                 this.handleDeleteTask(taskId);
             }
+
+            // Restore task
+            if (e.target.classList.contains('btn-restore')) {
+                this.handleRestoreTask(taskId);
+            }
+
+            // Permanently delete task (with confirmation)
+            if (e.target.classList.contains('btn-permanent-delete')) {
+                this.handlePermanentDeleteTask(taskId);
+            }
         });
     },
 
@@ -241,6 +255,25 @@ export const UI = {
 
         if (State.deleteTask(taskId)) {
             this.renderTaskList();
+        }
+    },
+
+    handleRestoreTask(taskId) {
+        if (State.restoreTask(taskId)) {
+            this.showNotification('Task restored successfully', 'success');
+            this.renderDeletedTasks();
+        }
+    },
+
+    handlePermanentDeleteTask(taskId) {
+        // Confirm before permanently deleting
+        if (!confirm('Are you sure you want to permanently delete this task? This cannot be undone.')) {
+            return;
+        }
+
+        if (State.permanentDeleteTask(taskId)) {
+            this.showNotification('Task permanently deleted', 'success');
+            this.renderDeletedTasks();
         }
     },
 

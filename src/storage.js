@@ -93,5 +93,62 @@ export const Storage = {
             console.error('Failed to save deleted tasks:', error);
             return { success: false, error: 'unknown' };
         }
+    },
+
+    removeFromDeletedTasks(taskId) {
+        try {
+            const deletedTasks = this.loadDeletedTasks();
+            const filteredTasks = deletedTasks.filter(task => task.id !== taskId);
+            return this.saveDeletedTasks(filteredTasks);
+        } catch (error) {
+            if (error.name === 'QuotaExceededError') {
+                console.error('Storage quota exceeded');
+                return { success: false, error: 'quota' };
+            }
+            if (error.name === 'SecurityError') {
+                console.warn('LocalStorage unavailable (private browsing mode)');
+                return { success: false, error: 'unavailable' };
+            }
+            console.error('Failed to remove from deleted tasks:', error);
+            return { success: false, error: 'unknown' };
+        }
+    },
+
+    moveTaskToActive(taskId) {
+        try {
+            const deletedTasks = this.loadDeletedTasks();
+            const activeTasks = this.loadTasks();
+
+            // Find the task in deleted tasks
+            const taskIndex = deletedTasks.findIndex(task => task.id === taskId);
+            if (taskIndex === -1) {
+                return { success: false, error: 'not_found' };
+            }
+
+            // Remove from deleted and add to active
+            const task = deletedTasks[taskIndex];
+            const filteredDeletedTasks = deletedTasks.filter(t => t.id !== taskId);
+            activeTasks.push(task);
+
+            // Save both arrays
+            const deleteResult = this.saveDeletedTasks(filteredDeletedTasks);
+            if (!deleteResult.success) {
+                return deleteResult;
+            }
+
+            const activeResult = this.saveTasks(activeTasks);
+            return activeResult;
+        } catch (error) {
+            if (error.name === 'QuotaExceededError') {
+                console.error('Storage quota exceeded');
+                return { success: false, error: 'quota' };
+            }
+            if (error.name === 'SecurityError') {
+                console.warn('LocalStorage unavailable (private browsing mode)');
+                return { success: false, error: 'unavailable' };
+            }
+            console.error('Failed to move task to active:', error);
+            return { success: false, error: 'unknown' };
+        }
     }
 };

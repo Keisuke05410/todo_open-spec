@@ -84,6 +84,34 @@ export const State = {
         });
     },
 
+    restoreTask(id) {
+        const index = this.deletedTasks.findIndex(t => t.id === id);
+        if (index === -1) {
+            return false;
+        }
+
+        // Move task from deleted to active array (preserving deletedAt timestamp)
+        const task = this.deletedTasks[index];
+        this.tasks.push(task);
+        this.deletedTasks.splice(index, 1);
+        this._saveToStorage();
+
+        return true;
+    },
+
+    permanentDeleteTask(id) {
+        const index = this.deletedTasks.findIndex(t => t.id === id);
+        if (index === -1) {
+            return false;
+        }
+
+        // Permanently remove task from deleted tasks array
+        this.deletedTasks.splice(index, 1);
+        this._saveToStorage();
+
+        return true;
+    },
+
     _saveToStorage() {
         // Helper to save current state and track storage errors
         const result = Storage.saveTasks(this.tasks);
