@@ -1,6 +1,10 @@
 // Simple test framework for vanilla JS todo app
 // Run this file in a browser with index.html to execute tests
 
+// Import modules for testing
+import { State } from './src/state.js';
+import { Storage } from './src/storage.js';
+
 // Test utilities
 const TestRunner = {
     tests: [],
