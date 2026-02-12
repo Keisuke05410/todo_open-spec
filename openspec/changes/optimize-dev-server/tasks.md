@@ -16,8 +16,8 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Test npm start command launches server on port 8000
-- [ ] 3.2 Verify application loads at http://localhost:8000 with ES6 modules working
-- [ ] 3.3 Confirm npx downloads serve package automatically on first run (no npm install needed)
-- [ ] 3.4 Test that todo app functionality works correctly with new server
-- [ ] 3.5 Verify documentation is clear and complete for all three server methods
+- [x] 3.1 Test npm start command launches server on port 8000
+- [x] 3.2 Verify application loads at http://localhost:8000 with ES6 modules working
+- [x] 3.3 Confirm npx downloads serve package automatically on first run (no npm install needed)
+- [x] 3.4 Test that todo app functionality works correctly with new server
+- [x] 3.5 Verify documentation is clear and complete for all three server methods
